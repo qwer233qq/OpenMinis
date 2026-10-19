@@ -290,7 +290,11 @@ internal fun AssistantHeader() {
     // two surfaces were written separately and the chat one silently failed
     // to pick up image icons; sharing the renderer makes that class of
     // divergence impossible rather than merely unlikely.
-    val soulMeta by com.openminis.app.agent.SoulStore.cachedMetadata.collectAsState()
+    //
+    // [T-android-soul-list] A chat pinned to a custom persona shows that
+    // persona's metadata instead of the global SOUL.md cache.
+    val soulMeta = LocalChatSoulOverride.current
+        ?: com.openminis.app.agent.SoulStore.cachedMetadata.collectAsState().value
     val displayName = soulMeta.name.ifBlank { com.openminis.app.agent.SoulMetadata.DEFAULT.name }
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -655,7 +659,7 @@ internal fun InlineErrorBanner(error: String, onRetry: (() -> Unit)? = null) {
  * Visual: 14×14 red rounded square (Color 0xFFFF3B30 = iOS systemRed).
  */
 @Composable
-private fun ToolStopButton(
+internal fun ToolStopButton(
     onStop: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -919,14 +923,11 @@ internal fun ToolCallPill(
                     maxLines = 1,
                 )
             }
-            // T168: restore per-tool stop button (reverts T117). Renders only
-            // for running/streaming/pending blocks so completed pills stay
-            // clean. Routes to the same global cancelStream() — there is no
-            // per-tool cancellation API on either platform.
-            if (isRunning && onStop != null) {
-                Spacer(modifier = Modifier.width(8.dp))
-                ToolStopButton(onStop = onStop)
-            }
+            // T168/T170 history note: the per-pill stop square (T168) is GONE
+            // now — user request 2026-10-19: the red square on every running
+            // tool capsule was visually noisy. The single stop affordance
+            // moved to the FloatingToolStatusBar (same red square, once, in
+            // the always-visible bar instead of inside every pill).
         }
         // [T-android-decorative-anim-perf] Shimmer overlay: its own layer, so
         // the per-tick translation invalidates nothing but this band. The outer

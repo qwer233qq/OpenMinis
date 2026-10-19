@@ -75,8 +75,16 @@ fun Modifier.animationLayer(): Modifier = graphicsLayer()
  * with [decorativePhase] inside a layer / draw lambda.
  */
 object DecorativeClock {
-    /** ~30 fps. A third of a 90 Hz panel's frames, visually indistinguishable for decoration. */
-    const val INTERVAL_NS = 33_333_333L
+    /**
+     * ~60 fps. On a 1-s spin (session ring) 30 fps is a visible 12-step walk;
+     * rotation needs ~60 steps per revolution to read as continuous. IsValid-
+     * ation cost of raising the shared clock is bounded by design: every
+     * reader is a layer-phase write of a single float, so the extra ~30
+     * updates/s touch nothing but that layer. Longer-period decorations
+     * (2.8 s shimmer, breathing dots) derive phase from the same nanos —
+     * their per-frame deltas just get finer.
+     */
+    const val INTERVAL_NS = 16_666_667L
 
     private val _nanos = mutableLongStateOf(0L)
     val nanos: State<Long> get() = _nanos

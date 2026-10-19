@@ -1,5 +1,10 @@
 pluginManagement {
+    // CN mirrors first (aliyun), official repos as fallback — dependencies
+    // already cached in GRADLE_USER_HOME are reused regardless of repo order.
     repositories {
+        maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
+        maven { url = uri("https://maven.aliyun.com/repository/google") }
+        maven { url = uri("https://maven.aliyun.com/repository/central") }
         google()
         mavenCentral()
         gradlePluginPortal()
@@ -9,6 +14,8 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        maven { url = uri("https://maven.aliyun.com/repository/google") }
+        maven { url = uri("https://maven.aliyun.com/repository/central") }
         google()
         mavenCentral()
         // [T-android-vad] RealTimeCutVADLibraryForAndroid ships via JitPack

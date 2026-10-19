@@ -181,6 +181,8 @@
     <string name="settings_token_usage_subtitle">Track API usage across providers</string>
     <string name="settings_section_appearance">Appearance</string>
     <string name="settings_appearance_subtitle">Theme, font size, and display</string>
+    <string name="settings_high_refresh">High refresh rate</string>
+    <string name="settings_high_refresh_subtitle">Request the panel\'s maximum refresh rate while the app is in the foreground; released when backgrounded</string>
     <string name="settings_section_agent_runtime">Agent Runtime</string>
     <string name="settings_skills">Skills</string>
     <string name="settings_skills_subtitle">Manage Minis Agent skills and instructions</string>
@@ -288,6 +290,27 @@
     <!-- T-soul-md — SOUL.md personality / identity settings -->
     <string name="settings_soul">Soul</string>
     <string name="settings_soul_subtitle">Persistent personality and identity (SOUL.md)</string>
+    <!-- T-android-soul-list — persona list (multiple personas, per-session switch) -->
+    <string name="settings_soul_list">Persona List</string>
+    <string name="settings_soul_list_subtitle">Add, edit, and switch between personas</string>
+    <string name="soul_list_title">Persona List</string>
+    <string name="soul_list_section">Personas</string>
+    <string name="soul_list_footer">The active persona is the default for new chats. Each chat can pick its own persona from the chat “…” menu.</string>
+    <string name="soul_list_active_badge">In Use</string>
+    <string name="soul_list_default_customized">Default Persona · Customized</string>
+    <string name="soul_list_default_plain">Default Persona</string>
+    <string name="soul_list_unnamed">Unnamed Persona</string>
+    <string name="soul_list_new_persona">New Persona</string>
+    <string name="soul_list_menu_set_active">Set as New Chat Default</string>
+    <string name="soul_list_menu_delete">Delete</string>
+    <string name="soul_list_action_edit">Edit</string>
+    <string name="soul_list_action_more">More options</string>
+    <string name="soul_list_delete_confirm_title">Delete persona?</string>
+    <string name="soul_list_delete_confirm_body">%1$s will be removed. Chats that switched to it fall back to the default persona.</string>
+    <string name="soul_list_delete_confirm_sure">Delete</string>
+    <string name="soul_edit_title">Edit Persona</string>
+    <string name="session_soul_title">Switch Persona</string>
+    <string name="session_soul_footer">Choose the persona this chat uses. Chats without a pick follow the new-chat default.</string>
     <string name="soul_settings_title">Soul</string>
     <string name="soul_section_preview">Preview</string>
     <string name="soul_section_identity">Identity</string>

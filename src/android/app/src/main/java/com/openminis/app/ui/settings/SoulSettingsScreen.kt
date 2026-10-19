@@ -546,7 +546,7 @@ internal fun SoulIconGlyph(
 }
 
 @Composable
-private fun SoulIconMenu(
+internal fun SoulIconMenu(
     expanded: Boolean,
     hasIcon: Boolean,
     onDismiss: () -> Unit,
@@ -591,7 +591,7 @@ private fun SoulIconMenu(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SoulEmojiPickerSheet(
+internal fun SoulEmojiPickerSheet(
     current: String,
     onDismiss: () -> Unit,
     onPick: (String) -> Unit,
@@ -711,7 +711,7 @@ private fun soulBodyCountTextAndroid(body: String): String {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LangPicker(lang: String, onLangChange: (String) -> Unit) {
+internal fun LangPicker(lang: String, onLangChange: (String) -> Unit) {
     val options = listOf(
         "auto" to stringResource(R.string.soul_lang_auto),
         "zh" to stringResource(R.string.soul_lang_zh),

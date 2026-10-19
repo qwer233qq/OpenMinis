@@ -13,3 +13,26 @@
 # the same endpoint declare the same identifier, e.g.
 # https://github.com/Wei-Shaw/claude-relay-service
 ANTHROPIC_OAUTH_IDENTIFIER_PROMPT=
+
+# Optional: pre-seed AI endpoints on first launch of a fresh install.
+# PRESEED_PROVIDERS is a single-line JSON Array of endpoint templates. Each
+# template materializes as a normal API-key provider ( WITH its stored key) the
+# first time the app runs with an empty provider store; the "preseed_applied"
+# marker makes it a one-shot per install, so it never reappears after you later
+# delete the providers. An upgrading user with an existing config is never
+# touched. Keys live in EncryptedSharedPreferences next to user-entered ones.
+#
+# Supported types: anthropic | openAI | openRouter | xAI | gemini
+# (OAuth/device-login types like kimiCode or githubCopilot are NOT preseedable).
+# `baseUrl` is the custom base URL; omit it ("baseUrl":"") for the type's
+# official endpoint. `apiKey` may be "" (empty-key mode for OpenAI/Anthropic
+# compat relays). `appendV1` (default true) controls the /v1 suffix appended
+# to the base URL.
+#
+# Constraint: do NOT use backslashes or double quotes inside the values.
+# Keep everything on ONE physical line (Java-properties `\<newline>`
+# continuation is technically handled by the parser but awkward for long
+# arrays).
+#
+# Example (real usage → provider-customization.properties, private repo only):
+# PRESEED_PROVIDERS=[{"label":"DeepSeek","type":"openAI","baseUrl":"https://api.deepseek.com","apiKey":"sk-...","appendV1":false},{"label":"My Relay","type":"anthropic","baseUrl":"https://claude-relay.local","apiKey":"cr-..."},{"label":"xAI","type":"xAI","baseUrl":"","apiKey":"xai-..."}]

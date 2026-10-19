@@ -10,6 +10,9 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.compose.foundation.lazy.LazyListState
 import com.openminis.app.agent.Level
+import com.openminis.app.agent.SoulFile
+import com.openminis.app.agent.SoulMetadata
+import com.openminis.app.data.repository.SoulRepository
 import com.openminis.app.agent.ToolLoopDetector
 import com.openminis.app.browser.BrowserActionInput
 import com.openminis.app.browser.BrowserTabPool
@@ -108,6 +111,9 @@ class ChatViewModel(
     val memoryRepository: MemoryRepository? = null,
     val skillRepository: com.openminis.app.data.repository.SkillRepository? = null,
     val mcpRepository: com.openminis.app.data.repository.MCPRepository? = null,
+    // [T-android-soul-list] Persona-list repo. Null = persona switching is
+    // unavailable on this surface (helpers always ignore the persona anyway).
+    val soulRepository: com.openminis.app.data.repository.SoulRepository? = null,
 ) : ViewModel() {
 
     companion object {
@@ -660,6 +666,7 @@ class ChatViewModel(
             memoryRepository: MemoryRepository?,
             skillRepository: com.openminis.app.data.repository.SkillRepository?,
             mcpRepository: com.openminis.app.data.repository.MCPRepository? = null,
+            soulRepository: com.openminis.app.data.repository.SoulRepository? = null,
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -671,6 +678,7 @@ class ChatViewModel(
                     memoryRepository = memoryRepository,
                     skillRepository = skillRepository,
                     mcpRepository = mcpRepository,
+                    soulRepository = soulRepository,
                 ) as T
             }
         }
@@ -2675,6 +2683,96 @@ class ChatViewModel(
     internal val _memoryEnabled =
         MutableStateFlow(com.openminis.app.data.MemoryGlobalPrefs.isGlobalEnabled(context))
     val memoryEnabled: StateFlow<Boolean> = _memoryEnabled.asStateFlow()
+
+    // ── [T-android-soul-list] Session persona ──────────────────────────
+    //
+    // Layer-1 identity for THIS chat. Resolution order mirrors the skill/MCP
+    // session-override pattern:
+    //   - constructor: draft sessions (and freshly opened chats) resolve the
+    //     per-session pin, falling back to the global "active" persona the
+    //     Persona List marks — null means the store-default SOUL.md.
+    //   - loadSession(): an existing session re-resolves the same way (in
+    //     case rows were pinned or the active persona changed while away).
+    //   - switchSessionSoul(): user pick in the session sheet, persisted via
+    //     the repo's session override table.
+    // Helpers never read this — HelperRunner.identitySection replaces the
+    // whole identity section for them (persona pollution guard).
+    private val _sessionPersona = MutableStateFlow(
+        if (helperConfig != null) null
+        else soulRepository?.resolveSessionPersona(sessionId),
+    )
+
+    /**
+     * Metadata override for persona-name surfaces (chat header, assistant
+     * bubble, typing indicator, composer placeholder). null = no custom
+     * persona in play; those surfaces keep their live SOUL.md cache source.
+     */
+    val sessionSoulMeta: StateFlow<SoulMetadata?> = _sessionPersona
+        .map { it?.metadata }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            _sessionPersona.value?.metadata,
+        )
+
+    /** Sheet visibility for the "Persona in Session" picker. */
+    private val _showSoulSheet = MutableStateFlow(false)
+    val showSoulSheet: StateFlow<Boolean> = _showSoulSheet.asStateFlow()
+    fun openSoulSheet() { _showSoulSheet.value = true }
+    fun dismissSoulSheet() { _showSoulSheet.value = false }
+
+    /**
+     * The persona row the sheet should mark as selected RIGHT NOW — the truth
+     * is [_sessionPersona] (what the prompt will inject), matched back to a
+     * repo id by value. Falls back to the default persona when nothing matches
+     * (e.g. the pinned persona was deleted since the pin was written).
+     */
+    fun currentSoulSelection(): String {
+        val persona = _sessionPersona.value ?: return SoulRepository.DEFAULT_ID
+        val repo = soulRepository ?: return SoulRepository.DEFAULT_ID
+        val match = repo.souls.value.firstOrNull { it.toSoulFile() == persona }
+        return match?.id ?: SoulRepository.DEFAULT_ID
+    }
+
+    /**
+     * Switch this chat's persona. [soulId] is [SoulRepository.DEFAULT_ID] (back
+     * to the SOUL.md default) or a custom persona id. Persists an explicit
+     * per-session pin so the chat stops following the global pick; the pin is
+     * written against the materialized session id — on a draft that means
+     * [ensureSession] runs now, the same trade-off the memory toggle accepted
+     * (a pre-first-message toggle creates the row, which is exactly the point:
+     * the choice has to survive re-entry + cold start).
+     */
+    fun switchSessionSoul(soulId: String) {
+        val repo = soulRepository ?: return
+        val persona = repo.personaFile(soulId)
+        if (soulId != SoulRepository.DEFAULT_ID && persona == null) return
+        // Re-tapping the already-selected row in the sheet must not spam the
+        // chat with a redundant "Persona switched to …" system row (or rewrite
+        // an identical pin).
+        if (soulId == currentSoulSelection()) return
+        val previous = _sessionPersona.value
+        _sessionPersona.value = persona
+        viewModelScope.launch {
+            try {
+                val sid = ensureSession()
+                // Always write an explicit pin (DEFAULT_ID for the default
+                // persona): an absent row means "follow the global active
+                // pick", which is not the same as "user pinned the default".
+                repo.setSessionOverride(sid, soulId)
+            } catch (e: Exception) {
+                // Roll back the in-memory pick so the prompt and the sheet
+                // never disagree with what a later turn would actually send.
+                _sessionPersona.value = previous
+                com.openminis.app.logging.AppLogger.warning(TAG, "switchSessionSoul persist failed: ${e.message}")
+            }
+        }
+        val displayName = (persona?.metadata?.name?.trim() ?: "Minis").ifEmpty { "Minis" }
+        appendSystemInfo(
+            text = "Persona switched to $displayName.",
+            iconKind = "persona",
+        )
+    }
 
     /**
      * [T-android-usage-capsule-style] Message ids whose token-usage capsule is
@@ -6066,6 +6164,9 @@ class ChatViewModel(
             // no-op when no rows match.
             skillRepository?.renameSessionOverrides(fromDraft = sessionId, toReal = session.id)
             mcpRepository?.renameSessionOverrides(fromDraft = sessionId, toReal = session.id)
+            // [T-android-soul-list] Same hop for persona pins written before
+            // the first message (draft session sheet pick).
+            soulRepository?.renameSessionOverrides(fromDraft = sessionId, toReal = session.id)
             // Re-point the lazily-created BrowserTabPool if it was already
             // instantiated against the draft key (e.g. user opened the browser
             // sheet before sending a message). Without this, cookies and
@@ -6232,6 +6333,17 @@ class ChatViewModel(
             _sessionTitle.value = session.title ?: UNTITLED_SESSION_TITLE
             _sessionCategory.value = session.category
             _memoryEnabled.value = session.memoryEnabled != 0
+            // [T-android-soul-list] Re-resolve the session persona (pin row may
+            // not have existed at construction, or the pinned record changed).
+            // Assigned on BOTH null and non-null results: an unpinned session
+            // re-resolves to the CURRENT global pick, which may have been
+            // cleared back to the SOUL.md default while this VM stayed alive —
+            // the constructor-resolved value would then be stale.
+            soulRepository?.let {
+                runCatching { it.resolveSessionPersona(sessionId) }.onSuccess { f ->
+                    _sessionPersona.value = f
+                }
+            }
             // T239: hydrate persisted thinking-mode override. null = unset
             // (use OFF as the legacy default); non-null = explicit user
             // choice persisted across cold-start. runCatching guards against
@@ -15093,7 +15205,14 @@ class ChatViewModel(
         val identitySection = helperConfig?.let {
             com.openminis.app.agent.jobs.HelperRunner.identitySection(it, browserEnabled = browserToolEnabled)
         }
-            ?: com.openminis.app.agent.SystemPromptBuilder.identitySection(context)
+            // [T-android-soul-list] Session persona wins over the store-default
+            // SOUL.md. _sessionPersona is null (= default persona unless the
+            // repo resolves a global active pick — which construction and
+            // loadSession already folded in) or the custom persona file.
+            ?: com.openminis.app.agent.SystemPromptBuilder.identitySection(
+                context,
+                _sessionPersona.value,
+            )
         // [T-memory-toggle-gates-injection-and-tools-android] Mirror the iOS
         // gate: when memory is disabled for this session, replace the
         // "memory_write / memory_get" tool bullets and the "Memory system:"

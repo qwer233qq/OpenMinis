@@ -161,7 +161,9 @@ internal fun TypingIndicator() {
     // that's updated on save (SoulSettingsScreen) and at app start
     // (MinisApp.onCreate via refreshCache); collectAsState makes Compose
     // recompose the indicator immediately when it changes.
-    val soulMeta by com.openminis.app.agent.SoulStore.cachedMetadata.collectAsState()
+    // [T-android-soul-list] A chat pinned to a custom persona shows THAT name.
+    val soulMeta = LocalChatSoulOverride.current
+        ?: com.openminis.app.agent.SoulStore.cachedMetadata.collectAsState().value
     val soulName = soulMeta.name.trim().ifEmpty { "Minis" }
 
     Row(

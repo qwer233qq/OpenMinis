@@ -36,8 +36,8 @@ android {
         applicationId = "com.openminis.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 28
-        versionName = "1.14"
+        versionCode = 32
+        versionName = "1.15"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -54,6 +54,21 @@ android {
             "String",
             "ANTHROPIC_OAUTH_IDENTIFIER_PROMPT",
             "\"${customizationValue("ANTHROPIC_OAUTH_IDENTIFIER_PROMPT")}\""
+        )
+
+        // Optional build-time provider pre-seed (see provider-customization.
+        // properties.example). PRESEED_PROVIDERS is a single-line JSON Array of
+        // `{"label":…,"type":…,"baseUrl":…,"apiKey":…,"appendV1":…}` template
+        // objects, materialized once on a genuinely empty provider store (see
+        // ProviderRepository.maybePreseedProviders). Empty → no buildConfig
+        // field content, no seeding. Do NOT use backslashes or double quotes
+        // inside values (properties escaping + JSON escaping compounds).
+        buildConfigField(
+            "String",
+            "PRESEED_PROVIDERS",
+            "\"" + (appCustomization.getProperty("PRESEED_PROVIDERS") ?: "")
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"") + "\""
         )
 
         ndk {

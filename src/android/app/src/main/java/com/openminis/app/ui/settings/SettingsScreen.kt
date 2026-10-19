@@ -30,6 +30,7 @@ import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.outlined.Feedback
+import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Backup
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.FolderShared
@@ -54,6 +55,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -68,6 +70,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
 import com.openminis.app.BuildConfig
+import com.openminis.app.MinisApp
 import com.openminis.app.R
 import com.openminis.app.ui.components.openExternalUrl
 import com.openminis.app.i18n.uppercaseForDisplay
@@ -94,6 +97,10 @@ fun SettingsScreen(
     // Agent Runtime section; default no-op for callers that haven't wired
     // the route yet.
     onSoulClick: () -> Unit = {},
+    // [T-android-soul-list] Persona List (multi-persona), listed directly
+    // below the single-persona Soul editor. Default no-op for callers that
+    // haven't wired the route yet.
+    onSoulListClick: () -> Unit = {},
     onPermissionsClick: () -> Unit = {},
     onUsageClick: () -> Unit = {},
     onAppearanceClick: () -> Unit = {},
@@ -173,6 +180,27 @@ fun SettingsScreen(
                     title = stringResource(R.string.settings_section_appearance),
                     subtitle = stringResource(R.string.settings_appearance_subtitle),
                     onClick = onAppearanceClick,
+                )
+                // [T-android-refresh-rate-setting] Panel refresh control: OFF =
+                // follow the system (often the base/60Hz mode on aggressive
+                // ROMs), ON = pin the max-refresh supported mode while in the
+                // foreground (see MainActivity.applyPreferredRefreshMode).
+                // Safe-mode wiring failure → repo null → static "on" row.
+                val refreshRepo = remember {
+                    runCatching { (context.applicationContext as? MinisApp)?.backgroundSettingsRepository }
+                        .getOrNull()
+                }
+                val highRefreshRate = refreshRepo
+                    ?.highRefreshRateEnabled
+                    ?.collectAsState()
+                    ?.value ?: true
+                SettingsSwitchRow(
+                    icon = Icons.Outlined.Speed,
+                    iconColor = Color(0xFF5856D6),
+                    title = stringResource(R.string.settings_high_refresh),
+                    subtitle = stringResource(R.string.settings_high_refresh_subtitle),
+                    checked = highRefreshRate,
+                    onCheckedChange = { v -> refreshRepo?.setHighRefreshRateEnabled(v) },
                     showDivider = false,
                 )
             }
@@ -218,6 +246,16 @@ fun SettingsScreen(
                     title = stringResource(R.string.settings_soul),
                     subtitle = stringResource(R.string.settings_soul_subtitle),
                     onClick = onSoulClick,
+                )
+                // [T-android-soul-list] Multi-persona list, right below the
+                // single-persona editor. Green groups icon per the mockup
+                // (distinct from the orange single-Soul sparkle).
+                SettingsItem(
+                    icon = Icons.Outlined.Groups,
+                    iconColor = Color(0xFF34C759),
+                    title = stringResource(R.string.settings_soul_list),
+                    subtitle = stringResource(R.string.settings_soul_list_subtitle),
+                    onClick = onSoulListClick,
                 )
                 SettingsItem(
                     icon = Icons.Outlined.Psychology,

@@ -153,6 +153,7 @@ import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.CloseFullscreen
 import androidx.compose.material.icons.outlined.Tag
+import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.Handyman
 import androidx.compose.material.icons.outlined.Extension
@@ -516,6 +517,8 @@ fun ChatScreen(
     memoryRepository: MemoryRepository? = null,
     skillRepository: com.openminis.app.data.repository.SkillRepository? = null,
     mcpRepository: com.openminis.app.data.repository.MCPRepository? = null,
+    // [T-android-soul-list] Persona-list repo (persona switching UI).
+    soulRepository: com.openminis.app.data.repository.SoulRepository? = null,
     onBack: () -> Unit,
     /**
      * [T-android-tablet-split] True when this chat is rendered as the DETAIL
@@ -586,6 +589,7 @@ fun ChatScreen(
             memoryRepository = memoryRepository,
             skillRepository = skillRepository,
             mcpRepository = mcpRepository,
+            soulRepository = soulRepository,
         ),
     )
     // [T-android-larky-longsession-followup] Consume the tail-windowed
@@ -602,6 +606,10 @@ fun ChatScreen(
     val hasOlderMessages by viewModel.hasOlderMessages.collectAsState()
     val isStreaming by viewModel.isStreaming.collectAsState()
     val canResume by viewModel.canResume.collectAsState()
+    // [T-android-soul-list] Effective persona metadata override for this chat
+    // (null while the chat is on the default SOUL.md persona).
+    val chatSoulMeta by viewModel.sessionSoulMeta.collectAsState()
+
     // [T-android-context-usage-hint] Context-window pressure. `contextUsage`
     // is live (drives the glow on every usage chunk); `contextUsageHint` is
     // the discrete, generation-keyed placeholder line.
@@ -940,6 +948,9 @@ fun ChatScreen(
     var showAttachMenu by remember { mutableStateOf(false) }
     var showChatMenu by remember { mutableStateOf(false) }
     var showSkillsSheet by remember { mutableStateOf(false) }
+    // [T-android-soul-list] "Switch Persona" sheet visibility — VM-owned (the
+    // menu item opens it; dismissal is routed back through dismissSoulSheet()).
+    val showSoulSheet by viewModel.showSoulSheet.collectAsState()
     // [T-mcp-integration-android] MCPs-in-Session sheet visibility.
     var showMcpsSheet by remember { mutableStateOf(false) }
     var showTokenUsageSheet by remember { mutableStateOf(false) }
@@ -2791,6 +2802,8 @@ fun ChatScreen(
         // minis://attachments/* lookups don't rely on the global bindMounts
         // map (which is last-writer-wins across sessions).
         LocalMarkdownSessionId provides sessionId,
+        // [T-android-soul-list] This chat's pinned persona (null = default).
+        LocalChatSoulOverride provides chatSoulMeta,
     ) {
     Scaffold(
         containerColor = ChatColors.background,
@@ -2868,8 +2881,11 @@ fun ChatScreen(
                             // SoulStore.cachedMetadata is the same source the
                             // input placeholder uses (see ~line 3581), so
                             // soul renames in Soul Settings reflect here live.
-                            val topBarSoul by com.openminis.app.agent.SoulStore
-                                .cachedMetadata.collectAsState()
+                            // [T-android-soul-list] When this chat pins a
+                            // custom persona, ITS name is displayed instead.
+                            val chatSoulOverride = LocalChatSoulOverride.current
+                            val topBarSoul = chatSoulOverride ?: com.openminis.app.agent.SoulStore
+                                .cachedMetadata.collectAsState().value
                             val displayTitle = when {
                                 showChatTitlePill
                                     && sessionTitle.isNotBlank()
@@ -3336,6 +3352,21 @@ fun ChatScreen(
                                     },
                                     leadingIcon = {
                                         MenuItemIcon(Icons.Outlined.Psychology)
+                                    },
+                                )
+                            }
+                            // [T-android-soul-list] Switch Persona, below the
+                            // per-session Memory row (mockup order: Skills /
+                            // MCP / Memory / 切换人格).
+                            if (soulRepository != null) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.session_soul_title)) },
+                                    onClick = {
+                                        showChatMenu = false
+                                        viewModel.openSoulSheet()
+                                    },
+                                    leadingIcon = {
+                                        MenuItemIcon(Icons.Outlined.Groups)
                                     },
                                 )
                             }
@@ -6660,8 +6691,12 @@ fun ChatScreen(
                                         // source for the Soul-customized name
                                         // so renames in Soul Settings reflect
                                         // here live.
-                                        val soulName by com.openminis.app.agent.SoulStore
-                                            .cachedMetadata.collectAsState()
+                                        // [T-android-soul-list] A chat pinned to
+                                        // a custom persona shows THAT name.
+                                        val chatSoulOverride = LocalChatSoulOverride.current
+                                        val soulName = (chatSoulOverride
+                                            ?: com.openminis.app.agent.SoulStore
+                                                .cachedMetadata.collectAsState().value).name
                                         // [T-android-composer-placeholder-rotation]
                                         // Crossfade between hints. Reduce-motion
                                         // (animator scale 0) skips the fade and
@@ -6695,7 +6730,7 @@ fun ChatScreen(
                                                 Text(
                                                     composerPlaceholderText(
                                                         key.coerceAtLeast(0),
-                                                        soulName.name,
+                                                        soulName,
                                                     ),
                                                     color = MaterialTheme.colorScheme.onSurface
                                                         .copy(alpha = 0.25f),
@@ -7572,6 +7607,16 @@ fun ChatScreen(
             mcpRepository = mcpRepository,
             sessionId = sessionId,
             onDismiss = { showMcpsSheet = false },
+        )
+    }
+
+    // [T-android-soul-list] "Switch Persona" sheet.
+    if (showSoulSheet && soulRepository != null) {
+        SessionSoulSheet(
+            soulRepository = soulRepository,
+            currentSelectionId = viewModel.currentSoulSelection(),
+            onSelect = { soulId -> viewModel.switchSessionSoul(soulId) },
+            onDismiss = { viewModel.dismissSoulSheet() },
         )
     }
 

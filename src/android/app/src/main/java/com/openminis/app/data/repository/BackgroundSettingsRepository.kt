@@ -73,6 +73,25 @@ class BackgroundSettingsRepository(context: Context) {
     }
 
     /**
+     * [T-android-refresh-rate-setting] "High refresh rate" toggle (Settings ›
+     * Appearance). Default ON — matches the pre-toggle behavior where
+     * MainActivity always pins the panel's max-refresh mode on resume, so
+     * flipping this OFF is the only behavior change on upgrade. Read by
+     * MainActivity both in onResume (snapshot) and as a live StateFlow so
+     * toggling mid-session re-drives the pin without a restart; the pin IS
+     * released in onPause regardless of this value.
+     */
+    private val _highRefreshRateEnabled =
+        MutableStateFlow(prefs.getBoolean(KEY_HIGH_REFRESH_RATE_ENABLED, true))
+    val highRefreshRateEnabled: StateFlow<Boolean> =
+        _highRefreshRateEnabled.asStateFlow()
+
+    fun setHighRefreshRateEnabled(value: Boolean) {
+        prefs.edit().putBoolean(KEY_HIGH_REFRESH_RATE_ENABLED, value).apply()
+        _highRefreshRateEnabled.value = value
+    }
+
+    /**
      * Last persisted overlay position (window x/y in pixels) from the
      * previous drag. -1 means "no remembered position — let the overlay
      * controller pick a default near the bottom-left, 10 dp from each
@@ -92,5 +111,6 @@ class BackgroundSettingsRepository(context: Context) {
         private const val KEY_BG_OVERLAY_X = "backgroundOverlayX"
         private const val KEY_BG_OVERLAY_Y = "backgroundOverlayY"
         private const val KEY_DYNAMIC_ISLAND_ENABLED = "dynamicIslandEnabled"
+        private const val KEY_HIGH_REFRESH_RATE_ENABLED = "highRefreshRateEnabled"
     }
 }

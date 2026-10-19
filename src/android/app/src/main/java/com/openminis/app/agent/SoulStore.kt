@@ -565,8 +565,15 @@ object SystemPromptBuilder {
      * sentence alone is the safe fallback when SOUL.md is missing or
      * empty, matching pre-SOUL behavior.
      */
-    fun identitySection(context: Context): String {
-        val file = SoulStore.load(context)
+    /**
+     * [T-android-soul-list] Session-selected persona. When the session has
+     * switched to a custom persona from the Persona List, its [SoulFile] is
+     * passed here and injected in place of the store-default SOUL.md — every
+     * downstream step is identical, only the source file and the wording of
+     * the two labels/hints change ("persona" instead of "SOUL.md").
+     */
+    fun identitySection(context: Context, persona: SoulFile? = null): String {
+        val file = persona ?: SoulStore.load(context)
         val name = (file?.metadata?.name ?: SoulMetadata.DEFAULT.name)
             .trim()
             .ifEmpty { "Minis" }
@@ -576,6 +583,11 @@ object SystemPromptBuilder {
         val identity = IDENTITY_TEMPLATE.replace("{name}", name)
         val identityTrimmed = identity.trimEnd()
 
+        // [T-android-soul-list] Label wording. The default (SOUL.md) path must
+        // stay byte-identical to the pre-personas prompt; only the session-
+        // persona path names the custom record.
+        val sourceLabel = if (persona != null) "persona" else "SOUL.md"
+
         // [T-soul-hint] Fixed hint telling the model how SOUL fields can be
         // changed. Always appended (with or without a personality body) so
         // the model never says "I can't change my personality". This hint
@@ -583,9 +595,14 @@ object SystemPromptBuilder {
         // SOUL body length limit (#356 / 1000 EN words / 1600 CN chars).
         val soulEditHint =
             "---\n" +
-            "SOUL.md fields (name / icon / style / lang / body) can be edited two ways:\n" +
-            "1. Tool: call `minis-config` to propose changes (user must approve).\n" +
-            "2. UI: ask the user to go to Settings → Soul to edit directly.\n" +
+            (if (persona != null)
+                "Persona fields (name / icon / style / lang / body) can be edited two ways:\n" +
+                "1. Tool: call `minis-config` to propose changes (user must approve).\n" +
+                "2. UI: ask the user to go to Settings → Persona List to edit directly.\n"
+            else
+                "SOUL.md fields (name / icon / style / lang / body) can be edited two ways:\n" +
+                "1. Tool: call `minis-config` to propose changes (user must approve).\n" +
+                "2. UI: ask the user to go to Settings → Soul to edit directly.\n") +
             "Pick whichever the user finds easier in context. Do not say you cannot change your personality."
 
         // [T-soul-style-injection 2026-05-18, port iOS 0409e24f] The `style`
@@ -600,7 +617,7 @@ object SystemPromptBuilder {
             // [T-agent-prompt-consistency-pass] Mirrors iOS SoulStore: a user-authored
             // style that prescribes a reply language is the more specific preference
             // and wins over the base prompt's match-the-user's-language default.
-            return "\n\nResponse style (from SOUL.md `style` — apply to every reply unless the user explicitly asks otherwise; if it prescribes a reply language, it overrides the default match-the-user's-language rule):\n$s"
+            return "\n\nResponse style (from $sourceLabel `style` — apply to every reply unless the user explicitly asks otherwise; if it prescribes a reply language, it overrides the default match-the-user's-language rule):\n$s"
         }
 
         val body = file?.body
@@ -628,7 +645,7 @@ object SystemPromptBuilder {
         // Strip the trailing space we'd otherwise leave hanging at the
         // end of the first paragraph when a personality block follows.
         return identityTrimmed +
-            "\n\nPersonality (from SOUL.md — your character and voice; defer to the user's latest message when it conflicts with anything here):\n" +
+            "\n\nPersonality (from $sourceLabel — your character and voice; defer to the user's latest message when it conflicts with anything here):\n" +
             personality +
             styleBlock(style) +
             "\n\n" +

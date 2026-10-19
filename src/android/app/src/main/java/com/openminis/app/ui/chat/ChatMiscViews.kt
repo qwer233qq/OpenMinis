@@ -555,6 +555,8 @@ internal fun FallbackInfoBlock(block: AssistantBlock, onRevert: (() -> Unit)? = 
         "compact" -> Icons.Default.CloseFullscreen
         "memory" -> Icons.Default.Psychology
         "thinking" -> Icons.Default.Lightbulb
+        // [T-android-soul-list] "Persona switched to …" system row.
+        "persona" -> Icons.Default.AutoAwesome
         else -> Icons.Default.Info
     }
     // Mirrors iOS systemDividerRow: HStack { Divider, label, Divider }.

@@ -156,6 +156,12 @@ class MinisApp : Application(), ImageLoaderFactory {
         private set
     lateinit var mcpRepository: MCPRepository
         private set
+    // [T-android-soul-list] Nullable (not lateinit): the persona list is a
+    // pure additive feature, so a SoulRepository construction failure must not
+    // bring the whole app into degraded mode. Chat surfaces handle null the
+    // same way they handle a missing skill/MCP repository.
+    var soulRepository: com.openminis.app.data.repository.SoulRepository? = null
+        private set
     lateinit var memoryRepository: MemoryRepository
         private set
     lateinit var webAppShortcutRepository: WebAppShortcutRepository
@@ -538,6 +544,12 @@ class MinisApp : Application(), ImageLoaderFactory {
             }
         )
         mcpRepository = MCPRepository(this)
+        // [T-android-soul-list] Guarded separately (same reasoning as the
+        // nullable declaration above): the persona list must be a no-op
+        // feature when its store fails, not a whole-app degraded launch.
+        soulRepository = runCatching { com.openminis.app.data.repository.SoulRepository(this) }
+            .onFailure { Log.e("MinisApp", "SoulRepository init failed — persona list disabled", it) }
+            .getOrNull()
         memoryRepository = MemoryRepository(java.io.File(filesDir, "minis-global/memory"))
         webAppShortcutRepository = WebAppShortcutRepository(database.webAppShortcutDao())
 

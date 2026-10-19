@@ -1219,9 +1219,18 @@ internal fun FloatingToolStatusBar(
                     )
                 }
             }
-            // T170: stop button removed from the floating bar — only the
-            // in-list ToolCallPill keeps the red square. Two stop affordances
-            // on the same active tool felt redundant on tight screens.
+            // T170 removed the stop button here ("two stop affordances felt
+            // redundant"); 2026-10-19 user request removed it from the IN-LIST
+            // pill instead — so the bar is the single stop surface again.
+            // Shown whenever the DISPLAYED block is a live tool and the
+            // caller routes a global cancel (onStop != null).
+            if (isRunning && onStop != null) {
+                Spacer(modifier = Modifier.width(10.dp))
+                ToolStopButton(
+                    onStop = onStop,
+                    modifier = Modifier.padding(end = 2.dp),
+                )
+            }
         }
 
         // Layer 2: Thumbnail floating above the bar (iOS: ZStack overlay)

@@ -297,7 +297,17 @@ class ProviderRepository(private val context: Context) {
                 // Guarded so this only runs when THIS coroutine adopted the config: if a
                 // writer won the race, `ensureConfigLoaded()` already warmed the cache and
                 // a second full reload would be pure work.
-                if (adoptedByAsyncLoader) loadAllThinkingRulesIntoCache()
+                if (adoptedByAsyncLoader) {
+                    loadAllThinkingRulesIntoCache()
+                    // [T-android-preseed-providers] Cold start normally adopts the
+                    // disk config HERE — the async loader sets _configLoaded=true
+                    // before any ensureConfigLoaded() caller runs, so the hook
+                    // inside ensureConfigLoaded() alone never fired (1.15-seed
+                    // regression: fresh install booted, adopted 0 instances, no
+                    // seed). Fire from BOTH paths; maybePreseedProviders's
+                    // marker-first claim makes the double call a no-op.
+                    maybePreseedProviders()
+                }
             } catch (e: Exception) {
                 android.util.Log.e(
                     "ProviderRepo",
@@ -604,6 +614,11 @@ class ProviderRepository(private val context: Context) {
             }
             _config.value = loaded
             _configLoaded.value = true
+            // [T-android-preseed-providers] Materialize build-time provider
+            // templates on a genuinely empty store (see maybePreseedProviders).
+            // Same lock as addInstance re-acquires — JVM monitors re-enter, no
+            // deadlock.
+            maybePreseedProviders()
         }
         // [T-android-thinking-rules-phase2] Warm the resolver's custom-rule cache once
         // config is available, so the (sync) request builder can read user rules.
@@ -786,6 +801,103 @@ class ProviderRepository(private val context: Context) {
         // Stale from the start so the next background sweep (or an explicit
         // triggerBackgroundRefreshIfStale call) will fetch it.
         invalidateModelCache(instance.id)
+    }
+
+    /**
+     * [T-android-preseed-providers] First-launch provider seeds for private
+     * builds. BuildConfig.PRESEED_PROVIDERS is generated at build time from
+     * `provider-customization.properties` (private repo, never synced into the
+     * public mirror — same policy as ANTHROPIC_OAUTH_IDENTIFIER_PROMPT): one
+     * JSON Array of `{"label":…,"type":…,"baseUrl":…,"apiKey":…,"appendV1":…}`
+     * template objects. On a genuinely empty store each entry materializes as
+     * a normal API-key instance — reusing [addInstance] so model seeding,
+     * voice templates and persistence behave exactly like user-created ones —
+     * and its key is written into EncryptedSharedPreferences next to
+     * user-stored ones. Runs at most once per install via the
+     * `preseed_applied` marker, which is also set when the store is NOT empty
+     * (an upgrading user must never get seeds retroactively) so templates
+     * can't loop-reappear after "user deleted everything". A malformed payload
+     * is logged and ignored; the marker is set regardless (finally) so a bad
+     * template can't retry on every launch — fix the template and reinstall.
+     *
+     * Only open-API-key provider types are preseedable
+     * {anthropic, openAI, openRouter, xAI, gemini}; OAuth-only types
+     * (Kimi Code, Copilot…) need a device-flow login and are skipped with a
+     * log line. Values must avoid backslashes and double quotes (properties
+     * + JSON escaping compounds; unsupported).
+     */
+    private fun maybePreseedProviders() {
+        val raw = com.openminis.app.BuildConfig.PRESEED_PROVIDERS.trim()
+        if (raw.isEmpty()) {
+            android.util.Log.i("ProviderRepo", "[ProviderSeed] no PRESEED_PROVIDERS in this build")
+            return
+        }
+        val marker = prefs.getBoolean("preseed_applied", false)
+        if (marker) {
+            android.util.Log.i("ProviderRepo", "[ProviderSeed] marker set — skipping (rawLen=${raw.length})")
+            return
+        }
+        // Claim FIRST, then process: this hook fires from two paths that can
+        // race on cold start (the init{} async loader and a synchronous
+        // ensureConfigLoaded caller whose write won the adoption race). Without
+        // an atomic claim both could pass the marker check and seed TWICE —
+        // marker-first makes the seed strictly once-per-install, at the cost
+        // that a crash mid-seed leaves a partial set (acceptable: the store is
+        // empty anyway, user just re-adds manually or reinstalls).
+        prefs.edit().putBoolean("preseed_applied", true).apply()
+        android.util.Log.i(
+            "ProviderRepo",
+            "[ProviderSeed] engaged: rawLen=${raw.length} storeEmpty=${_config.value.instances.isEmpty()}",
+        )
+        try {
+            if (_config.value.instances.isNotEmpty()) {
+                // Upgrading user with real config — never silently inject templates.
+                android.util.Log.i("ProviderRepo", "[ProviderSeed] store not empty — skipping injection")
+                return
+            }
+            val allowed = setOf(
+                ProviderType.anthropic,
+                ProviderType.openAI,
+                ProviderType.openRouter,
+                ProviderType.xAI,
+                ProviderType.gemini,
+            )
+            val arr = org.json.JSONArray(raw)
+            var seeded = 0
+            for (i in 0 until arr.length()) {
+                val entry = arr.optJSONObject(i) ?: continue
+                val label = entry.optString("label", "").trim()
+                if (label.isEmpty()) continue
+                val type = try {
+                    ProviderType.valueOf(entry.optString("type", "").trim())
+                } catch (e: IllegalArgumentException) {
+                    null
+                } ?: continue
+                if (type !in allowed) {
+                    android.util.Log.w(
+                        "ProviderRepo",
+                        "[ProviderSeed] skipped \"$label\" (type ${type.name} needs OAuth/device login — not preseedable)",
+                    )
+                    continue
+                }
+                val id = java.util.UUID.randomUUID().toString()
+                saveApiKey(id, entry.optString("apiKey", ""))
+                addInstance(
+                    ProviderInstance(
+                        id = id,
+                        label = label,
+                        providerType = type,
+                        credentialType = ProviderCredential.apiKey,
+                        customBaseURL = entry.optString("baseUrl", "").trim().ifEmpty { null },
+                        appendV1Suffix = if (entry.has("appendV1")) entry.optBoolean("appendV1") else true,
+                    ),
+                )
+                seeded++
+            }
+            android.util.Log.i("ProviderRepo", "[ProviderSeed] seeded $seeded provider(s) from build template")
+        } catch (t: Throwable) {
+            android.util.Log.e("ProviderRepo", "[ProviderSeed] template parse failed — ignoring: ${t.message}")
+        }
     }
 
     /**

@@ -177,6 +177,11 @@ object Routes {
     const val MCP = "mcp"
     /** [T-soul-md] SOUL.md editor. */
     const val SOUL = "soul"
+    /** [T-android-soul-list] Persona List + custom persona editor. */
+    const val SOUL_LIST = "soul_list"
+    const val SOUL_EDIT = "soul_edit?personaId={personaId}"
+    fun soulEdit(personaId: String? = null): String =
+        if (personaId == null) "soul_edit" else "soul_edit?personaId=$personaId"
     const val MEMORY_FILE_EDIT = "memory_file/{fileName}/{isGlobal}"
     const val PERMISSIONS = "permissions"
     /**
@@ -246,6 +251,8 @@ fun AppNavigation(
     skillRepository: SkillRepository? = null,
     mcpRepository: com.openminis.app.data.repository.MCPRepository? = null,
     memoryRepository: MemoryRepository? = null,
+    // [T-android-soul-list] Persona-list repo for settings/chat wiring.
+    soulRepository: com.openminis.app.data.repository.SoulRepository? = null,
     navController: NavHostController = rememberNavController(),
     initialDeepLink: DeepLinkAction? = null,
 ) {
@@ -589,6 +596,7 @@ fun AppNavigation(
                 memoryRepository = memoryRepository,
                 skillRepository = skillRepository,
                 mcpRepository = mcpRepository,
+                soulRepository = soulRepository,
             )
         }
 
@@ -605,6 +613,7 @@ fun AppNavigation(
                 memoryRepository = memoryRepository,
                 skillRepository = skillRepository,
                 mcpRepository = mcpRepository,
+                soulRepository = soulRepository,
             )
         }
 
@@ -623,6 +632,7 @@ fun AppNavigation(
                 onAgentToolsClick = { navController.safeNavigate(Routes.AGENT_TOOLS) },
                 onMcpClick = { navController.safeNavigate(Routes.MCP) },
                 onSoulClick = { navController.safeNavigate(Routes.SOUL) },
+                onSoulListClick = { navController.safeNavigate(Routes.SOUL_LIST) },
                 onPermissionsClick = { navController.safeNavigate(Routes.PERMISSIONS) },
                 onUsageClick = { navController.safeNavigate(Routes.USAGE_STATS) },
                 onAppearanceClick = { navController.safeNavigate(Routes.APPEARANCE) },
@@ -1363,6 +1373,37 @@ fun AppNavigation(
         composable(Routes.SOUL) {
             com.openminis.app.ui.settings.SoulSettingsScreen(
                 onBack = { navController.safePopBackStack() },
+            )
+        }
+
+        // [T-android-soul-list] Persona list page.
+        composable(Routes.SOUL_LIST) {
+            com.openminis.app.ui.settings.SoulPersonaListScreen(
+                onBack = { navController.safePopBackStack() },
+                onEditDefault = { navController.safeNavigate(Routes.SOUL) },
+                onEditPersona = { personaId ->
+                    navController.safeNavigate(Routes.soulEdit(personaId))
+                },
+                soulRepository = soulRepository,
+            )
+        }
+
+        // [T-android-soul-list] Custom persona editor (null id = new persona).
+        composable(
+            route = Routes.SOUL_EDIT,
+            arguments = listOf(
+                navArgument("personaId") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+            ),
+        ) { backStackEntry ->
+            val personaId = backStackEntry.arguments?.getString("personaId")
+            com.openminis.app.ui.settings.SoulPersonaEditScreen(
+                existingId = personaId,
+                onBack = { navController.safePopBackStack() },
+                soulRepository = soulRepository,
             )
         }
 

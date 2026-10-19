@@ -234,6 +234,26 @@ class MainActivity : ComponentActivity() {
         // genuinely unsafe.
         val minisApp = application as? MinisApp
 
+        // [T-android-refresh-rate-setting] Re-apply the refresh pin when the
+        // Settings toggle flips mid-session (Settings › Appearance › High
+        // refresh rate). Snapshot reads in onResume still gate adb-less paths;
+        // this collects the live StateFlow so an OFF→ON flip in settings
+        // immediately requests the max mode without another resume cycle.
+        // Safe-mode (subsystems not init) leaves the lateinit unset — treat as
+        // "no repository", the toggle stays OFF there anyway.
+        minisApp?.takeIf { it.subsystemsInitialized }?.let { app ->
+            // plain lifecycleScope collect (NOT repeatOnLifecycle: this project
+            // doesn't carry lifecycle-runtime-ktx). Right apartment: the scope
+            // is cancelled when the activity is destroyed, and stray emissions
+            // while STOPPED merely no-op in applyPreferredRefreshMode (the
+            // window is still ours).
+            lifecycleScope.launch {
+                app.backgroundSettingsRepository
+                    .highRefreshRateEnabled
+                    .collect { enabled -> applyPreferredRefreshMode(enabled) }
+            }
+        }
+
         // [T-android-downgrade-compat] A database written by a NEWER build is
         // not a crash — it is a recoverable state with a specific remedy, and
         // the file has deliberately been left untouched. Handle it before the
@@ -595,6 +615,7 @@ class MainActivity : ComponentActivity() {
                     skillRepository = app.skillRepository,
                     mcpRepository = app.mcpRepository,
                     memoryRepository = app.memoryRepository,
+                    soulRepository = app.soulRepository,
                     navController = navController,
                     initialDeepLink = launchDeepLink,
                 )
@@ -656,6 +677,77 @@ class MainActivity : ComponentActivity() {
         nav.safeNavigate(newRoute) {
             popUpTo(Routes.SESSION_LIST) { inclusive = false }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // [T-android-refresh-rate-setting] Respect the Settings toggle; the
+        // repeatOnLifecycle collector covers in-session flips, and this
+        // snapshot read is the resume-path belt (核心: matching the persisted
+        // default true so pre-toggle behavior is unchanged).
+        val enabled = try {
+            (application as? MinisApp)
+                ?.takeIf { it.subsystemsInitialized }
+                ?.backgroundSettingsRepository
+                ?.highRefreshRateEnabled
+                ?.value ?: true
+        } catch (e: UninitializedPropertyAccessException) {
+            true
+        }
+        applyPreferredRefreshMode(enabled)
+    }
+
+    override fun onPause() {
+        // Release the high-refresh pin while backgrounded so the surface
+        // switcher falls back to the system default (and other apps' choices
+        // are not constrained by ours across task switches).
+        applyPreferredRefreshMode(false)
+        super.onPause()
+    }
+
+    /**
+     * [T-android-refresh-rate] Many ROMs (incl. ZUXOS on this tablet) start
+     * apps at the panel's BASE mode — 60Hz or even 48Hz — and only switch to
+     * 120Hz for apps that ask. Compose never asks. Every frame the switcher
+     * holds the panel in the low mode is visible stutter in chat scroll.
+     *
+     * We request the highest-refresh mode that matches the CURRENT mode's
+     * physical resolution (never a downscaled high-refresh mode), via
+     * preferredDisplayModeId on the window. Released in onPause.
+     */
+    private fun applyPreferredRefreshMode(enable: Boolean) {
+        val display = if (android.os.Build.VERSION.SDK_INT >= 30) display
+            else @Suppress("DEPRECATION") windowManager.defaultDisplay
+        val attrs = window.attributes
+        if (enable) {
+            val current = display.mode
+            val modes = display.supportedModes
+            val modeSummary = modes.joinToString { "${it.physicalWidth}x${it.physicalHeight}@${it.refreshRate.toInt()}" }
+            android.util.Log.i("MinisRefresh", "current=${current.physicalWidth}x${current.physicalHeight}@${current.refreshRate} modes=$modeSummary")
+            // Prefer a mode with the SAME physical resolution; only fall back to
+            // the global max refresh when the ROM reports supported modes in
+            // different dims than display.mode (seen on vendor ROMs) — we never
+            // accept a DOWNSCALED high-refresh mode via explicit dim check.
+            val sameRes = modes.filter { it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight }
+            val target = sameRes.maxByOrNull { it.refreshRate }
+                ?: modes.maxByOrNull { it.refreshRate }
+                ?: run {
+                    android.util.Log.i("MinisRefresh", "no supported modes — skipping")
+                    return
+                }
+            if (target.refreshRate <= current.refreshRate + 0.01f) {
+                android.util.Log.i("MinisRefresh", "panel already max (${target.refreshRate}); no-op")
+                return
+            }
+            if (attrs.preferredDisplayModeId == target.modeId) return
+            android.util.Log.i("MinisRefresh", "requesting mode ${target.modeId} (${target.physicalWidth}x${target.physicalHeight}@${target.refreshRate})")
+            attrs.preferredDisplayModeId = target.modeId
+        } else {
+            if (attrs.preferredDisplayModeId == 0) return
+            android.util.Log.i("MinisRefresh", "releasing refresh pin (onPause)")
+            attrs.preferredDisplayModeId = 0
+        }
+        window.attributes = attrs
     }
 
     /**
